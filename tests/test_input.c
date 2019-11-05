@@ -53,6 +53,7 @@ struct {
 	char *xkb_variant;
 	char *xkb_options;
 	char *xkb_keymap;
+	bool compose;
 } input_conf;
 
 /* Pressing Ctrl-\ should toggle the capturing. */
@@ -130,7 +131,7 @@ static void monitor_event(struct uterm_monitor *mon,
 				      input_conf.xkb_layout,
 				      input_conf.xkb_variant,
 				      input_conf.xkb_options,
-				      keymap,
+				      keymap, input_conf.compose,
 				      0, 0, log_llog, NULL);
 		if (ret)
 			return;
@@ -181,6 +182,7 @@ static void print_help()
 		"\t    --xkb-options <options> [-]     Set XkbOptions for input devices\n"
 		"\t    --xkb-keymap <FILE>     [-]     Use a predefined keymap for\n"
 		"\t                                    input devices\n",
+		"\t    --compose               [off]   Use Compose (dead-keys) support\n"
 		"test_input");
 	/*
 	 * 80 char line:
@@ -199,6 +201,7 @@ struct conf_option options[] = {
 	CONF_OPTION_STRING(0, "xkb-variant", &input_conf.xkb_variant, ""),
 	CONF_OPTION_STRING(0, "xkb-options", &input_conf.xkb_options, ""),
 	CONF_OPTION_STRING(0, "xkb-keymap", &input_conf.xkb_keymap, ""),
+	CONF_OPTION_BOOL(0, "compose", &input_conf.compose, false),
 };
 
 int main(int argc, char **argv)

@@ -53,6 +53,7 @@ struct uterm_input_dev {
 	char *node;
 	struct ev_fd *fd;
 	struct xkb_state *state;
+	struct xkb_compose_state *compose_state;
 	/* Used in sleep/wake up to store the key's pressed/released state. */
 	char key_state_bits[SHL_DIV_ROUND_UP(KEY_CNT, CHAR_BIT)];
 
@@ -76,6 +77,7 @@ struct uterm_input {
 	struct shl_hook *hook;
 	struct xkb_context *ctx;
 	struct xkb_keymap *keymap;
+	struct xkb_compose_table *compose;
 
 	struct shl_dlist devices;
 };
@@ -90,7 +92,8 @@ int uxkb_desc_init(struct uterm_input *input,
 		   const char *layout,
 		   const char *variant,
 		   const char *options,
-		   const char *keymap);
+		   const char *keymap,
+		   bool compose);
 void uxkb_desc_destroy(struct uterm_input *input);
 
 int uxkb_dev_init(struct uterm_input_dev *dev);

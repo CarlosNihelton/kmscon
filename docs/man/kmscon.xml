@@ -290,6 +290,15 @@
       </varlistentry>
 
       <varlistentry>
+        <term><option>--compose</option></term>
+        <listitem>
+                <para>Use Compose (dead-keys) support. See
+                      <citerefentry><refentrytitle>Compose</refentrytitle><manvolnum>5</manvolnum></citerefentry>
+                      for more details. (default: off)</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
         <term><option>--xkb-repeat-delay {delay}</option></term>
         <listitem>
           <para>Delay after key was pressed until key-repeat starts (in

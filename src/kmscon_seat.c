@@ -715,6 +715,7 @@ int kmscon_seat_new(struct kmscon_seat **out,
 			      seat->conf->xkb_variant,
 			      seat->conf->xkb_options,
 			      keymap,
+			      seat->conf->compose,
 			      seat->conf->xkb_repeat_delay,
 			      seat->conf->xkb_repeat_rate,
 			      log_llog, NULL);

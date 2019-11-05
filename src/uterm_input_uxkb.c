@@ -32,6 +32,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <xkbcommon/xkbcommon.h>
+#include <xkbcommon/xkbcommon-compose.h>
 #include "shl_hook.h"
 #include "shl_llog.h"
 #include "shl_misc.h"
@@ -80,12 +81,33 @@ static void uxkb_log(struct xkb_context *context, enum xkb_log_level level,
 		    args);
 }
 
+/*
+ * Locale sucks, but we need its value for Compose support. Since we don't
+ * want to set it (or reset it), and glibc doesn't provide any other sane
+ * way of querying it, we just find it ourselves as described in locale(7).
+ */
+static const char *find_locale(void)
+{
+	const char *locale;
+
+	locale = getenv("LC_ALL");
+	if (!locale)
+		locale = getenv("LC_CTYPE");
+	if (!locale)
+		locale = getenv("LANG");
+	if (!locale)
+		locale = "C";
+
+	return locale;
+}
+
 int uxkb_desc_init(struct uterm_input *input,
 		   const char *model,
 		   const char *layout,
 		   const char *variant,
 		   const char *options,
-		   const char *keymap)
+		   const char *keymap,
+		   bool use_compose)
 {
 	int ret;
 	struct xkb_rule_names rmlvo = {
@@ -96,6 +118,7 @@ int uxkb_desc_init(struct uterm_input *input,
 		.options = options,
 	};
 	const char *fallback;
+	const char *locale;
 
 	fallback = _binary_src_uterm_input_fallback_xkb_bin_start;
 
@@ -157,6 +180,15 @@ int uxkb_desc_init(struct uterm_input *input,
 			   model, layout, variant, options);
 	}
 
+	if (use_compose) {
+		locale = find_locale();
+		input->compose = xkb_compose_table_new_from_locale(input->ctx,
+								locale, 0);
+		if (!input->compose)
+			llog_warn(input, "cannot parse compose file, "
+				  "disabling compose support");
+	}
+
 	return 0;
 
 err_ctx:
@@ -166,6 +198,7 @@ err_ctx:
 
 void uxkb_desc_destroy(struct uterm_input *input)
 {
+	xkb_compose_table_unref(input->compose);
 	xkb_keymap_unref(input->keymap);
 	xkb_context_unref(input->ctx);
 }
@@ -194,6 +227,14 @@ int uxkb_dev_init(struct uterm_input_dev *dev)
 		goto err_timer;
 	}
 
+	if (dev->input->compose) {
+		dev->compose_state = xkb_compose_state_new(
+						dev->input->compose, 0);
+		if (!dev->compose_state)
+			llog_warn(dev->input, "cannot create compose state, "
+				  "disabling compose support");
+	}
+
 	return 0;
 
 err_timer:
@@ -203,6 +244,7 @@ err_timer:
 
 void uxkb_dev_destroy(struct uterm_input_dev *dev)
 {
+	xkb_compose_state_unref(dev->compose_state);
 	xkb_state_unref(dev->state);
 	ev_eloop_rm_timer(dev->repeat_timer);
 }
@@ -379,18 +421,43 @@ int uxkb_dev_process(struct uterm_input_dev *dev,
 		     uint16_t key_state, uint16_t code)
 {
 	struct xkb_state *state;
+	struct xkb_compose_state *compose_state;
 	xkb_keycode_t keycode;
 	const xkb_keysym_t *keysyms;
+	xkb_keysym_t one_sym;
 	int num_keysyms, ret;
+	enum xkb_compose_status compose_status;
 	enum xkb_state_component changed;
 
 	if (key_state == KEY_REPEATED)
 		return -ENOKEY;
 
 	state = dev->state;
+	compose_state = dev->compose_state;
 	keycode = code + EVDEV_KEYCODE_OFFSET;
 
 	num_keysyms = xkb_state_key_get_syms(state, keycode, &keysyms);
+
+	one_sym = XKB_KEY_NoSymbol;
+	if (num_keysyms == 1) {
+		/* See: https://bugs.freedesktop.org/show_bug.cgi?id=67167 */
+		one_sym = xkb_state_key_get_one_sym(state, keycode);
+		keysyms = &one_sym;
+	}
+
+	compose_status = XKB_COMPOSE_NOTHING;
+	if (compose_state && key_state == KEY_PRESSED) {
+		/* XKB_KEY_NoSymbol cancels the current compose sequence. */
+		xkb_compose_state_feed(compose_state, one_sym);
+
+		compose_status = xkb_compose_state_get_status(compose_state);
+		if (compose_status == XKB_COMPOSE_COMPOSED)
+			one_sym = xkb_compose_state_get_one_sym(compose_state);
+
+		if (compose_status == XKB_COMPOSE_COMPOSED ||
+		    compose_status == XKB_COMPOSE_CANCELLED)
+			xkb_compose_state_reset(compose_state);
+	}
 
 	changed = 0;
 	if (key_state == KEY_PRESSED)
@@ -402,6 +469,10 @@ int uxkb_dev_process(struct uterm_input_dev *dev,
 		uxkb_dev_update_keyboard_leds(dev);
 
 	if (num_keysyms <= 0)
+		return -ENOKEY;
+
+	if (compose_status == XKB_COMPOSE_COMPOSING ||
+	    compose_status == XKB_COMPOSE_CANCELLED)
 		return -ENOKEY;
 
 	ret = uxkb_dev_fill_event(dev, &dev->event, keycode, num_keysyms,
@@ -476,4 +547,7 @@ void uxkb_dev_wake_up(struct uterm_input_dev *dev)
 	}
 
 	uxkb_dev_update_keyboard_leds(dev);
+
+	if (dev->compose_state)
+		xkb_compose_state_reset(dev->compose_state);
 }

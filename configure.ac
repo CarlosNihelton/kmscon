@@ -47,7 +47,7 @@ LT_INIT
 # Required pkg-config dependencies
 #
 
-PKG_CHECK_MODULES([XKBCOMMON], [xkbcommon])
+PKG_CHECK_MODULES([XKBCOMMON], [xkbcommon >= 0.5.0])
 AC_SUBST(XKBCOMMON_CFLAGS)
 AC_SUBST(XKBCOMMON_LIBS)
 
